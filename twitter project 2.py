@@ -1,308 +1,98 @@
+users = {}
+posts = []
+post_id = 1
+
+def create_user():
+    while True:
+        u = input("Username (no spaces): ").strip()
+        if not u or " " in u or u in users:
+            print("Invalid or taken.\n"); continue
+        break
+    users[u] = {"bio": input("Bio: ").strip(), "followers": 0}
+    print("User created.\n")
+
+def write_post():
+    global post_id
+    if not users: return print("No users.\n")
+    u = input("Who is posting? ").strip()
+    if u not in users: return print("User not found.\n")
+    t = input("Post: ").strip()
+    if not t: return print("Empty post.\n")
+    posts.append({"id": post_id, "user": u, "text": t, "likes": 0})
+    print(f"Post {post_id} created.\n")
+    post_id += 1
+
+def view_feed():
+    if not posts: return print("No posts.\n")
+    print("\n--- FEED ---")
+    for p in posts:
+        print(f"[{p['id']}] {p['user']}: {p['text']} ({p['likes']} likes)")
+    print()
+
+def like_post():
+    if not posts: return print("No posts.\n")
+    try: pid = int(input("Post ID: "))
+    except: return print("Invalid.\n")
+    for p in posts:
+        if p["id"] == pid:
+            p["likes"] += 1
+            return print("Liked.\n")
+    print("Not found.\n")
+
+def search_feed():
+    if not posts: return print("No posts.\n")
+    q = input("Search: ").strip().lower()
+    if not q: return print("Empty.\n")
+    r = [p for p in posts if q in p["text"].lower()]
+    if not r: return print("No matches.\n")
+    for p in r: print(f"[{p['id']}] {p['user']}: {p['text']} ({p['likes']} likes)")
+    print()
+
+def show_top_post():
+    if not posts: return print("No posts.\n")
+    p = max(posts, key=lambda x: (x["likes"], -x["id"]))
+    print(f"\nTop: [{p['id']}] {p['user']}: {p['text']} ({p['likes']} likes)\n")
+
+def edit_bio():
+    if not users: return print("No users.\n")
+    u = input("User: ").strip()
+    if u not in users: return print("Not found.\n")
+    users[u]["bio"] = input("New bio: ")
+    print("Updated.\n")
+
+def delete_post():
+    if not posts: return print("No posts.\n")
+    u = input("Your username: ").strip()
+    if u not in users: return print("Not found.\n")
+    try: pid = int(input("Post ID: "))
+    except: return print("Invalid.\n")
+    for i, p in enumerate(posts):
+        if p["id"] == pid:
+            if p["user"] != u: return print("Not your post.\n")
+            posts.pop(i); return print("Deleted.\n")
+    print("Not found.\n")
+
+def show_users():
+    if not users: return print("No users.\n")
+    for u, info in users.items():
+        print(f"{u}: {info['bio']} ({info['followers']} followers)")
+    print()
+
+def main_menu():
+    menu = """
+1.Create user   2.Write post   3.View feed   4.Like post   5.Exit
+6.Search        7.Top post     8.Edit bio    9.Delete post 10.Show users
 """
-A clean, structured, and production-style mini Twitter backend.
-All in-memory storage. No external DB required.
-"""
-
-import time
-import hashlib
-import jwt
-from uuid import uuid4
-from typing import Dict, Set, List, Optional, Any
-
-
-# ----------------------------------------------------------------------
-# CONFIG
-# ----------------------------------------------------------------------
-
-JWT_SECRET = "supersecret"   # Use environment variables in production
-JWT_ALGO = "HS256"
-MAX_TWEET_LENGTH = 280
-
-
-# ----------------------------------------------------------------------
-# IN-MEMORY DATABASE
-# ----------------------------------------------------------------------
-
-users: Dict[str, Dict[str, Any]] = {}
-tweets: Dict[str, Dict[str, Any]] = {}
-
-followers: Dict[str, Set[str]] = {}
-following: Dict[str, Set[str]] = {}
-notifications: Dict[str, List[Dict[str, Any]]] = {}
-
-
-# ----------------------------------------------------------------------
-# HELPERS
-# ----------------------------------------------------------------------
-
-def hash_pw(password: str) -> str:
-    """Return SHA-256 hash of a password."""
-    return hashlib.sha256(password.encode()).hexdigest()
-
-
-def generate_token(user_id: str) -> str:
-    """Generate a JWT for a user."""
-    payload = {"uid": user_id, "ts": time.time()}
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
-
-
-def verify_token(token: str) -> Optional[Dict[str, Any]]:
-    """Verify token and return payload or None."""
-    try:
-        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
-    except Exception:
-        return None
-
-
-def find_user_by_username(username: str) -> Optional[Dict[str, Any]]:
-    """Return a user dict by username, or None."""
-    return next((u for u in users.values() if u["username"] == username), None)
-
-
-# ----------------------------------------------------------------------
-# AUTH / USER
-# ----------------------------------------------------------------------
-
-def register(email: str, username: str, password: str) -> str:
-    """Register a new user."""
-    if not (email and username and password):
-        return "Missing fields."
-
-    if find_user_by_username(username):
-        return "Username taken."
-
-    uid = str(uuid4())
-    user_obj = {
-        "id": uid,
-        "email": email,
-        "username": username,
-        "password": hash_pw(password),
-        "bio": "",
-        "profile_pic": None,
-        "banner": None,
-        "private": False,
-        "created": time.time(),
+    funcs = {
+        "1": create_user, "2": write_post, "3": view_feed, "4": like_post,
+        "5": lambda: exit(), "6": search_feed, "7": show_top_post,
+        "8": edit_bio, "9": delete_post, "10": show_users
     }
-
-    users[uid] = user_obj
-    followers[uid] = set()
-    following[uid] = set()
-    notifications[uid] = []
-
-    return f"User created. ID={uid}"
-
-
-def login(username: str, password: str) -> str:
-    """Authenticate user and return JWT."""
-    user = find_user_by_username(username)
-    if user and user["password"] == hash_pw(password):
-        return generate_token(user["id"])
-
-    return "Invalid login."
-
-
-# ----------------------------------------------------------------------
-# FOLLOW SYSTEM
-# ----------------------------------------------------------------------
-
-def follow(token: str, target_username: str) -> str:
-    data = verify_token(token)
-    if not data:
-        return "Invalid token."
-
-    uid = data["uid"]
-    target = find_user_by_username(target_username)
-
-    if not target:
-        return "User not found."
-
-    tid = target["id"]
-    if uid == tid:
-        return "Can't follow yourself."
-
-    following[uid].add(tid)
-    followers[tid].add(uid)
-
-    notifications[tid].append({
-        "type": "follow",
-        "from": users[uid]["username"],
-        "ts": time.time()
-    })
-
-    return f"You now follow {target_username}."
-
-
-def unfollow(token: str, target_username: str) -> str:
-    data = verify_token(token)
-    if not data:
-        return "Invalid token."
-
-    uid = data["uid"]
-    target = find_user_by_username(target_username)
-
-    if not target:
-        return "User not found."
-
-    tid = target["id"]
-    following[uid].discard(tid)
-    followers[tid].discard(uid)
-
-    return "Unfollowed."
-
-
-# ----------------------------------------------------------------------
-# TWEETS
-# ----------------------------------------------------------------------
-
-def create_tweet(token: str, text: str, parent: Optional[str] = None,
-                 media: Optional[str] = None, quote: Optional[str] = None) -> str:
-    data = verify_token(token)
-    if not data:
-        return "Invalid token."
-
-    if not text:
-        return "Tweet cannot be empty."
-
-    if len(text) > MAX_TWEET_LENGTH:
-        return "Tweet too long."
-
-    uid = data["uid"]
-    tid = str(uuid4())
-
-    tweets[tid] = {
-        "id": tid,
-        "user": uid,
-        "text": text,
-        "media": media,
-        "parent": parent,
-        "quote": quote,
-        "likes": set(),
-        "retweets": set(),
-        "ts": time.time(),
-    }
-
-    # Notify reply owner
-    if parent and parent in tweets:
-        owner = tweets[parent]["user"]
-        notifications[owner].append({
-            "type": "reply",
-            "from": users[uid]["username"],
-            "tweet": tid,
-            "ts": time.time()
-        })
-
-    return f"Tweet posted. ID={tid}"
-
-
-# ----------------------------------------------------------------------
-# ENGAGEMENT
-# ----------------------------------------------------------------------
-
-def like_tweet(token: str, tweet_id: str) -> str:
-    data = verify_token(token)
-    if not data:
-        return "Invalid token."
-
-    if tweet_id not in tweets:
-        return "Tweet not found."
-
-    tweets[tweet_id]["likes"].add(data["uid"])
-    return "Liked."
-
-
-def retweet(token: str, tweet_id: str) -> str:
-    data = verify_token(token)
-    if not data:
-        return "Invalid token."
-
-    if tweet_id not in tweets:
-        return "Tweet not found."
-
-    tweets[tweet_id]["retweets"].add(data["uid"])
-    return "Retweeted."
-
-
-# ----------------------------------------------------------------------
-# FEED
-# ----------------------------------------------------------------------
-
-def home_feed(token: str) -> List[Dict[str, Any]]:
-    data = verify_token(token)
-    if not data:
-        return "Invalid token."
-
-    uid = data["uid"]
-    visible_users = following[uid] | {uid}
-
-    timeline = [
-        t for t in tweets.values()
-        if t["user"] in visible_users
-    ]
-
-    timeline.sort(key=lambda x: x["ts"], reverse=True)
-
-    return [
-        {
-            "id": t["id"],
-            "user": users[t["user"]]["username"],
-            "text": t["text"],
-            "likes": len(t["likes"]),
-            "retweets": len(t["retweets"]),
-            "timestamp": t["ts"],
-        }
-        for t in timeline
-    ]
-
-
-# ----------------------------------------------------------------------
-# SEARCH
-# ----------------------------------------------------------------------
-
-def search_tweets(keyword: str) -> List[Dict[str, Any]]:
-    key = keyword.lower()
-    return [t for t in tweets.values() if key in t["text"].lower()]
-
-
-def search_users(keyword: str) -> List[Dict[str, Any]]:
-    key = keyword.lower()
-    return [u for u in users.values() if key in u["username"].lower()]
-
-
-# ----------------------------------------------------------------------
-# NOTIFICATIONS
-# ----------------------------------------------------------------------
-
-def get_notifications(token: str) -> Any:
-    data = verify_token(token)
-    if not data:
-        return "Invalid token."
-    return notifications[data["uid"]]
-
-
-# ----------------------------------------------------------------------
-# MODERATION
-# ----------------------------------------------------------------------
-
-def report_tweet(tweet_id: str) -> str:
-    if tweet_id not in tweets:
-        return "Tweet not found."
-    return f"Tweet {tweet_id} reported."
-
-
-# ----------------------------------------------------------------------
-# TESTING
-# ----------------------------------------------------------------------
+    while True:
+        print(menu)
+        f = funcs.get(input("Option: ").strip())
+        f() if f else print("Invalid.\n")
 
 if __name__ == "__main__":
-    print("Registering test user...")
-    print(register("a@test.com", "asher", "pass123"))
-
-    print("\nLogging in...")
-    token = login("asher", "pass123")
-    print("Token:", token)
-
-    print("\nPosting tweet...")
-    print(create_tweet(token, "Hello Twitter!"))
-
-    print("\nFeed:")
-    print(home_feed(token))
+    print("Welcome to TinyTwitter!")
+    main_menu()
